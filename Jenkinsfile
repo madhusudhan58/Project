@@ -1,87 +1,58 @@
 pipeline {
+    agent any
 
-agent any
+    environment {
+        IMAGE_NAME = "madhu58/project"
+        IMAGE_TAG = "latest"
+    }
 
-environment {
+    stages {
 
-IMAGE_NAME="madhu58/project"
+        // No need to checkout again because Pipeline from SCM
+        // already performs "Checkout SCM"
+        stage('Build Docker') {
+            steps {
+                bat "docker build -t %IMAGE_NAME%:%IMAGE_TAG% ."
+            }
+        }
 
-CONTAINER="project"
+        stage('Docker Login') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub',
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+                    bat """
+                    docker login -u %DOCKER_USER% -p %DOCKER_PASS%
+                    """
+                }
+            }
+        }
 
-}
+        stage('Push Image') {
+            steps {
+                bat "docker push %IMAGE_NAME%:%IMAGE_TAG%"
+            }
+        }
 
-stages {
+        stage('Deploy') {
+            steps {
+                bat """
+                docker stop project || exit 0
+                docker rm project || exit 0
+                docker run -d --name project -p 80:80 %IMAGE_NAME%:%IMAGE_TAG%
+                """
+            }
+        }
+    }
 
-stage('Checkout'){
-
-steps{
-
-git 'https://github.com/madhusudhan58/Project.git'
-
-}
-
-}
-
-stage('Build Docker'){
-
-steps{
-
-sh 'docker build -t $IMAGE_NAME:latest .'
-
-}
-
-}
-
-stage('Docker Login'){
-
-steps{
-
-withCredentials([usernamePassword(credentialsId:'dockerhub',
-
-usernameVariable:'USER',
-
-passwordVariable:'PASS')]){
-
-sh '''
-
-echo $PASS | docker login -u $USER --password-stdin
-
-'''
-
-}
-
-}
-
-}
-
-stage('Push Image'){
-
-steps{
-
-sh 'docker push $IMAGE_NAME:latest'
-
-}
-
-}
-
-stage('Deploy'){
-
-steps{
-
-sh '''
-
-docker stop website || true
-
-docker rm website || true
-
-docker run -d --name website -p 80:80 $IMAGE_NAME:latest
-
-'''
-
-}
-
-}
-
-}
-
+    post {
+        success {
+            echo 'Pipeline completed successfully.'
+        }
+        failure {
+            echo 'Pipeline failed.'
+        }
+    }
 }
